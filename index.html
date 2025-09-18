@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Cursor Chaos — No Quit Button (Demo)</title>
+  <style>
+    html, body {
+      height: 100%;
+      margin: 0;
+    }
+
+    /* hide the real cursor */
+    body.hide-cursor, .hide-cursor * {
+      cursor: none !important;
+    }
+
+    #prankOverlay {
+      position: fixed;
+      inset: 0;
+      background: linear-gradient(
+        135deg,
+        rgba(255,255,160,0.06),
+        rgba(160,220,255,0.03)
+      );
+      z-index: 9999;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    #fakeCursor {
+      position: fixed;
+      width: 36px;
+      height: 36px;
+      line-height: 36px;
+      text-align: center;
+      font-size: 28px;
+      pointer-events: none;
+      transform: translate(-50%,-50%);
+      z-index: 10001;
+      filter: drop-shadow(0 2px 6px rgba(0,0,0,0.25));
+    }
+
+    #annoyMsg {
+      background: rgba(0,0,0,0.72);
+      color: #fff;
+      padding: 12px 18px;
+      border-radius: 10px;
+      font-family: system-ui, "Segoe UI", Roboto, Arial;
+      margin-bottom: 14px;
+      font-weight: 600;
+    }
+
+    /* small invisible helper for you (owner) */
+    .sr-only {
+      position: absolute;
+      left: -9999px;
+      top: auto;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="prankOverlay" role="dialog" aria-modal="true">
+    <div id="annoyMsg">...</div>
+    <!-- NO exit button here per your request -->
+    <!-- Tell friends: press Esc to stop (you said you'll tell them how) -->
+  </div>
+
+  <div id="fakeCursor">.</div>
+
+  <audio id="blip" preload="auto">
+    <source
+      src="data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAIARKwAABCxAgAEABAAZGF0YQAAAAA="
+      type="audio/wav"
+    >
+  </audio>
+
+  <script>
+    /*
+      Harmless prank:
+      - hides real cursor
+      - shows lagging fake cursor
+      - plays tiny blips
+      - STILL PROVIDES Esc to stop
+      - No button shown
+      - DO NOT use to trap or harm others
+    */
+
+    // Config
+    const fakeEmoji = "😈";
+    const blipProbability = 0.8;
+    const lag = 0.009;
+    let active = true;
+
+    const fake = document.getElementById("fakeCursor");
+    const overlay = document.getElementById("prankOverlay");
+    const blip = document.getElementById("blip");
+
+    // hide real cursor
+    document.body.classList.add("hide-cursor");
+    fake.textContent = fakeEmoji;
+
+    let realX = window.innerWidth / 2,
+        realY = window.innerHeight / 2;
+    let fakeX = realX,
+        fakeY = realY;
+
+    function animate() {
+      if (!active) return;
+      fakeX += (realX - fakeX) * lag;
+      fakeY += (realY - fakeY) * lag;
+      fake.style.left = fakeX + "px";
+      fake.style.top = fakeY + "px";
+      requestAnimationFrame(animate);
+    }
+
+    window.addEventListener("mousemove", (e) => {
+      if (!active) return;
+      realX = e.clientX;
+      realY = e.clientY;
+
+      if (Math.random() < blipProbability) {
+        try {
+          blip.currentTime = 0;
+          blip.play().catch(() => {});
+        } catch(e) {}
+      }
+    });
+
+    // ONLY keyboard escape is available to stop — we keep this!
+    window.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") stopPrank();
+    });
+
+    function stopPrank() {
+      if (!active) return;
+      active = false;
+      document.body.classList.remove("hide-cursor");
+      overlay.style.transition = "opacity 0.25s ease";
+      overlay.style.opacity = "0";
+      fake.style.transition = "opacity 0.25s ease, transform 0.25s";
+      fake.style.opacity = "0";
+      setTimeout(() => {
+        try { overlay.remove(); fake.remove(); } catch(_) {}
+      }, 300);
+    }
+
+    // start loop
+    requestAnimationFrame(animate);
+  </script>
+
+</body>
+</html>
