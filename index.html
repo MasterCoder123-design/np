@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Devil Touch — Toggle & Timer (Fixed Collisions)</title>
+<title>Math</title>
 <style>
   html,body { height:100%; margin:0; background:#fafafa; font-family:system-ui, Segoe UI, Roboto, Arial; }
   body.hide-cursor, .hide-cursor * { cursor: none !important; }
@@ -69,12 +69,12 @@
 
 <script>
 /* === CONFIG === */
-const LAG = 0.01;            // keep your lag
+const LAG = 0.005;            // keep your lag
 const TARGET_DIAM = 112;     // matches CSS
 const TARGET_R = TARGET_DIAM / 2;
 const DEVIL_R = 10;          // rough radius for the emoji
 const HIT_RADIUS = TARGET_R + DEVIL_R - 2; // edge touch counts
-const FLEE_RADIUS = 120;     // rigged flee distance (mode OFF)
+const FLEE_RADIUS = 160;     // rigged flee distance (mode OFF)
 const IDLE_DRIFT = 0.4;      // tiny wobble
 const ROUND_SECONDS = 60;
 const CONTACT_COOLDOWN_MS = 180; // prevent multi-score per contact
