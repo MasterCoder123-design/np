@@ -1,161 +1,227 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Cursor Chaos — No Quit Button (Demo)</title>
-  <style>
-    html, body {
-      height: 100%;
-      margin: 0;
-    }
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Devil Touch — Toggle & Timer (Fixed Collisions)</title>
+<style>
+  html,body { height:100%; margin:0; background:#fafafa; font-family:system-ui, Segoe UI, Roboto, Arial; }
+  body.hide-cursor, .hide-cursor * { cursor: none !important; }
 
-    /* hide the real cursor */
-    body.hide-cursor, .hide-cursor * {
-      cursor: none !important;
-    }
+  /* HUD top-left */
+  #hud {
+    position: fixed; left: 12px; top: 12px; z-index: 20000;
+    background: rgba(0,0,0,0.78); color:#fff; padding:8px 12px;
+    border-radius: 10px; font-weight:700; font-size:14px; pointer-events:none;
+    box-shadow: 0 6px 16px rgba(0,0,0,0.18);
+  }
 
-    #prankOverlay {
-      position: fixed;
-      inset: 0;
-      background: linear-gradient(
-        135deg,
-        rgba(255,255,160,0.06),
-        rgba(160,220,255,0.03)
-      );
-      z-index: 9999;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      flex-direction: column;
-      user-select: none;
-      -webkit-user-select: none;
-    }
+  /* Bullseye target (112px diameter) */
+  .target {
+    position: fixed;
+    width: 112px; height: 112px; border-radius: 50%;
+    pointer-events: none; z-index: 15000;
+    background:
+      radial-gradient(circle at 50% 50%,
+        #ffffff 0 16%,
+        #e53935 16% 36%,
+        #ffffff 36% 58%,
+        #e53935 58% 100%);
+    box-shadow: 0 12px 28px rgba(0,0,0,0.18);
+    transition: transform 150ms ease, opacity 180ms ease;
+  }
 
-    #fakeCursor {
-      position: fixed;
-      width: 36px;
-      height: 36px;
-      line-height: 36px;
-      text-align: center;
-      font-size: 28px;
-      pointer-events: none;
-      transform: translate(-50%,-50%);
-      z-index: 10001;
-      filter: drop-shadow(0 2px 6px rgba(0,0,0,0.25));
-    }
+  /* Devil (fake cursor) */
+  #fakeCursor {
+    position: fixed; width: 36px; height: 36px; line-height: 36px;
+    text-align: center; font-size: 28px; pointer-events: none;
+    transform: translate(-50%,-50%); z-index: 30000;
+    filter: drop-shadow(0 4px 14px rgba(0,0,0,0.2));
+  }
 
-    #annoyMsg {
-      background: rgba(0,0,0,0.72);
-      color: #fff;
-      padding: 12px 18px;
-      border-radius: 10px;
-      font-family: system-ui, "Segoe UI", Roboto, Arial;
-      margin-bottom: 14px;
-      font-weight: 600;
-    }
-
-    /* small invisible helper for you (owner) */
-    .sr-only {
-      position: absolute;
-      left: -9999px;
-      top: auto;
-      width: 1px;
-      height: 1px;
-      overflow: hidden;
-    }
-  </style>
+  /* Game over overlay */
+  #over {
+    position: fixed; inset: 0; display:none; place-items:center; z-index: 40000;
+    background: rgba(0,0,0,0.55); color:#fff; text-align:center; padding:20px;
+  }
+  #over .card {
+    background: rgba(20,20,20,0.9);
+    padding: 18px 22px; border-radius: 12px; box-shadow: 0 12px 32px rgba(0,0,0,0.25);
+  }
+  #over h1 { margin: 0 0 6px 0; font-size: 22px; }
+</style>
 </head>
 <body>
 
-  <div id="prankOverlay" role="dialog" aria-modal="true">
-    <div id="annoyMsg">...</div>
-    <!-- NO exit button here per your request -->
-    <!-- Tell friends: press Esc to stop (you said you'll tell them how) -->
+<div id="hud">Score: 0 • Time: 60s • Mode: OFF</div>
+<div id="fakeCursor">😈</div>
+
+<audio id="blip"><source src="data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAIARKwAABCxAgAEABAAZGF0YQAAAAA="></audio>
+<audio id="pop"><source src="data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAIARKwAABCxAgAEABAAZGF0YQAAAAA="></audio>
+
+<div id="over">
+  <div class="card">
+    <h1>Time’s Up ⏰</h1>
+    <p id="finalScore">Final Score: 0</p>
+    <p>Press R to restart • Esc to exit</p>
   </div>
+</div>
 
-  <div id="fakeCursor">.</div>
+<script>
+/* === CONFIG === */
+const LAG = 0.01;            // keep your lag
+const TARGET_DIAM = 112;     // matches CSS
+const TARGET_R = TARGET_DIAM / 2;
+const DEVIL_R = 10;          // rough radius for the emoji
+const HIT_RADIUS = TARGET_R + DEVIL_R - 2; // edge touch counts
+const FLEE_RADIUS = 120;     // rigged flee distance (mode OFF)
+const IDLE_DRIFT = 0.4;      // tiny wobble
+const ROUND_SECONDS = 60;
+const CONTACT_COOLDOWN_MS = 180; // prevent multi-score per contact
+/* ============== */
 
-  <audio id="blip" preload="auto">
-    <source
-      src="data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAIARKwAABCxAgAEABAAZGF0YQAAAAA="
-      type="audio/wav"
-    >
-  </audio>
+let active = true, running = false, hitMode = false;
+let score = 0, timeLeft = ROUND_SECONDS, timerId = null;
+let lastHitAt = 0;
 
-  <script>
-    /*
-      Harmless prank:
-      - hides real cursor
-      - shows lagging fake cursor
-      - plays tiny blips
-      - STILL PROVIDES Esc to stop
-      - No button shown
-      - DO NOT use to trap or harm others
-    */
+const fakeEl = document.getElementById('fakeCursor');
+const hud = document.getElementById('hud');
+const over = document.getElementById('over');
+const finalScoreEl = document.getElementById('finalScore');
+const blip = document.getElementById('blip');
+const pop = document.getElementById('pop');
 
-    // Config
-    const fakeEmoji = "😈";
-    const blipProbability = 0.8;
-    const lag = 0.009;
-    let active = true;
+document.body.classList.add('hide-cursor');
 
-    const fake = document.getElementById("fakeCursor");
-    const overlay = document.getElementById("prankOverlay");
-    const blip = document.getElementById("blip");
+let realX = innerWidth/2, realY = innerHeight/2;
+let fakeX = realX, fakeY = realY;
 
-    // hide real cursor
-    document.body.classList.add("hide-cursor");
-    fake.textContent = fakeEmoji;
+/* Target tracked by CENTER coordinates (tx, ty) */
+let target = null;
 
-    let realX = window.innerWidth / 2,
-        realY = window.innerHeight / 2;
-    let fakeX = realX,
-        fakeY = realY;
+const rand=(a,b)=>Math.random()*(b-a)+a;
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const dist=(ax,ay,bx,by)=>Math.hypot(ax-bx,ay-by);
+function tryPlay(a){ try{ a.currentTime=0;a.play().catch(()=>{});}catch(_){} }
+const playBlip=()=>tryPlay(blip), playPop=()=>tryPlay(pop);
 
-    function animate() {
-      if (!active) return;
-      fakeX += (realX - fakeX) * lag;
-      fakeY += (realY - fakeY) * lag;
-      fake.style.left = fakeX + "px";
-      fake.style.top = fakeY + "px";
-      requestAnimationFrame(animate);
-    }
+function setHud(){ hud.textContent=`Score: ${score} • Time: ${timeLeft}s • Mode: ${hitMode?'ON':'OFF'}`; }
 
-    window.addEventListener("mousemove", (e) => {
-      if (!active) return;
-      realX = e.clientX;
-      realY = e.clientY;
+function applyTargetPos() {
+  // position element by top-left = center - radius
+  target.el.style.left = (target.tx - TARGET_R) + 'px';
+  target.el.style.top  = (target.ty - TARGET_R) + 'px';
+}
 
-      if (Math.random() < blipProbability) {
-        try {
-          blip.currentTime = 0;
-          blip.play().catch(() => {});
-        } catch(e) {}
+function spawnTarget(){
+  if(target && target.el) target.el.remove();
+  const el=document.createElement('div'); el.className='target';
+  document.body.appendChild(el);
+  target={
+    el,
+    tx: rand(TARGET_R+10, innerWidth - (TARGET_R+10)),
+    ty: rand(TARGET_R+10, innerHeight - (TARGET_R+10)),
+    vx: rand(-IDLE_DRIFT, IDLE_DRIFT),
+    vy: rand(-IDLE_DRIFT, IDLE_DRIFT),
+    lastTeleport: 0
+  };
+  applyTargetPos();
+}
+
+function teleportTarget(){
+  if(!target) return;
+  target.tx = rand(TARGET_R+10, innerWidth - (TARGET_R+10));
+  target.ty = rand(TARGET_R+10, innerHeight - (TARGET_R+10));
+  target.vx = rand(-IDLE_DRIFT, IDLE_DRIFT);
+  target.vy = rand(-IDLE_DRIFT, IDLE_DRIFT);
+  applyTargetPos();
+  target.lastTeleport = Date.now();
+}
+
+function startRound(){
+  score=0; timeLeft=ROUND_SECONDS; setHud(); over.style.display='none'; running=true;
+  if(timerId) clearInterval(timerId);
+  timerId=setInterval(()=>{ if(!running)return; timeLeft--; setHud(); if(timeLeft<=0) endRound(); },1000);
+}
+
+function endRound(){
+  running=false; if(timerId) clearInterval(timerId);
+  finalScoreEl.textContent=`Final Score: ${score}`; over.style.display='grid';
+}
+
+function addPointAndMove(){
+  const now = Date.now();
+  if (now - lastHitAt < CONTACT_COOLDOWN_MS) return; // debounce
+  lastHitAt = now;
+  score++; setHud(); playPop();
+  target.el.style.transform='scale(0.75)';
+  setTimeout(()=>{ teleportTarget(); target.el.style.transform='scale(1)'; },120);
+}
+
+function loop(){
+  if(!active) return;
+
+  // devil follows real mouse with lag
+  fakeX += (realX - fakeX) * LAG; 
+  fakeY += (realY - fakeY) * LAG; 
+  fakeEl.style.left = fakeX + 'px';
+  fakeEl.style.top  = fakeY + 'px';
+
+  if(running && target){
+    // idle drift (center-coordinates)
+    target.tx += target.vx;
+    target.ty += target.vy;
+
+    // keep center in bounds
+    if(target.tx < TARGET_R || target.tx > innerWidth - TARGET_R) target.vx *= -1;
+    if(target.ty < TARGET_R || target.ty > innerHeight - TARGET_R) target.vy *= -1;
+    target.tx = clamp(target.tx, TARGET_R, innerWidth - TARGET_R);
+    target.ty = clamp(target.ty, TARGET_R, innerHeight - TARGET_R);
+
+    // distance devil -> target center
+    const d = dist(target.tx, target.ty, fakeX, fakeY);
+
+    if(hitMode){
+      // Mode ON: no fleeing; touching the bullseye scores
+      if (d <= HIT_RADIUS) addPointAndMove();
+    } else {
+      // Mode OFF: flee if devil gets near
+      if (d <= FLEE_RADIUS && Date.now() - target.lastTeleport > 100){
+        teleportTarget(); if(Math.random()<0.35) playBlip();
       }
-    });
-
-    // ONLY keyboard escape is available to stop — we keep this!
-    window.addEventListener("keydown", (e) => {
-      if (e.key === "Escape") stopPrank();
-    });
-
-    function stopPrank() {
-      if (!active) return;
-      active = false;
-      document.body.classList.remove("hide-cursor");
-      overlay.style.transition = "opacity 0.25s ease";
-      overlay.style.opacity = "0";
-      fake.style.transition = "opacity 0.25s ease, transform 0.25s";
-      fake.style.opacity = "0";
-      setTimeout(() => {
-        try { overlay.remove(); fake.remove(); } catch(_) {}
-      }, 300);
+      // Still allow legit touch-score if you actually collide
+      if (d <= HIT_RADIUS) addPointAndMove();
     }
 
-    // start loop
-    requestAnimationFrame(animate);
-  </script>
+    applyTargetPos();
+  }
 
+  requestAnimationFrame(loop);
+}
+
+/* Inputs */
+addEventListener('mousemove', e=>{ if(!active)return; realX=e.clientX; realY=e.clientY; });
+addEventListener('keydown', e=>{
+  const k=e.key.toLowerCase();
+  if(k==='escape') stopAll();
+  if(k==='r'){ if(!active)return; spawnTarget(); startRound(); }
+  if(k==='t'){ hitMode=!hitMode; setHud(); }
+});
+
+function stopAll(){
+  if(!active)return; active=false; running=false; if(timerId) clearInterval(timerId);
+  document.body.classList.remove('hide-cursor');
+  try{
+    if(target) target.el.style.opacity='0';
+    fakeEl.style.opacity='0'; hud.style.opacity='0'; over.style.opacity='0';
+  }catch(_){}
+  setTimeout(()=>{ try{
+    if(target) target.el.remove(); fakeEl.remove(); hud.remove(); over.remove();
+  }catch(_){ }},250);
+}
+
+/* Boot */
+spawnTarget(); startRound(); requestAnimationFrame(loop);
+</script>
 </body>
 </html>
